@@ -9,25 +9,39 @@
         :root { --blue: #1e88e5; --red: #ff6b6b; --dark: #1a1a1a; --white: #fff; }
         body { background: var(--dark); color: var(--white); font-family: sans-serif; padding: 20px; }
         .panel { background: #2d2d2d; padding: 15px; border-radius: 8px; border: 1px solid var(--blue); margin-bottom: 20px; }
-        input { padding: 8px; border-radius: 4px; border: 1px solid #444; background: #000; color: #fff; margin-right: 10px; }
+        
+        input, textarea { 
+            padding: 8px; border-radius: 4px; border: 1px solid #444; 
+            background: #000; color: #fff; margin-right: 10px; 
+            text-transform: uppercase; 
+        }
+
+        textarea { width: 100%; box-sizing: border-box; margin-bottom: 10px; text-transform: none; resize: vertical; }
+        
         table { width: 100%; border-collapse: collapse; }
-        th, td { border: 1px solid #444; padding: 10px; text-align: center; }
-        th { background: var(--blue); }
+        th, td { border: 1px solid #444; padding: 10px; text-align: center; text-transform: uppercase; }
+        th { background: var(--blue); font-size: 0.8rem; }
+        
         .btn { padding: 8px 15px; cursor: pointer; border: none; border-radius: 4px; font-weight: bold; }
-        .btn-add { background: var(--blue); color: white; }
+        .btn-add { background: var(--blue); color: white; width: 100%; }
         .btn-score { background: #00ff00; color: black; width: 100%; margin-top: 10px; }
         .btn-del { background: var(--red); color: white; padding: 5px; font-size: 10px; }
+
+        .admin-correct { background-color: rgba(0, 255, 0, 0.2); color: #00ff00; font-weight: bold; }
+        .flex-container { display: flex; flex-direction: column; gap: 10px; }
     </style>
 </head>
 <body>
 
-    <h2>TRANG QUẢN TRÒ (ADMIN)</h2>
+    <h2>PLAYTOEIC (ADMIN)</h2>
 
     <div class="panel">
-        <h3>1. Quản lý lớp học</h3>
-        <input type="text" id="pName" placeholder="Tên học sinh mới...">
-        <button class="btn btn-add" onclick="addPlayer()">THÊM HỌC SINH</button>
-        <button class="btn" style="background: #555; color: white;" onclick="resetSystem()">RESET PHÒNG</button>
+        <h3>1. Quản lý lớp học (Thêm hàng loạt)</h3>
+        <div class="flex-container">
+            <textarea id="bulkNames" rows="5" placeholder="Dán danh sách tên tại đây (Mỗi tên một dòng)..."></textarea>
+            <button class="btn btn-add" onclick="addBulkPlayers()">THÊM DANH SÁCH HỌC SINH</button>
+            <button class="btn" style="background: #555; color: white;" onclick="resetSystem()">XÓA HẾT DỮ LIỆU PHÒNG</button>
+        </div>
     </div>
 
     <div class="panel">
@@ -42,7 +56,9 @@
                 <th>Xóa</th>
                 <th>Học sinh</th>
                 <th>Điểm</th>
-                <th>Câu 1</th><th>Câu 2</th><th>Câu 3</th><th>Câu 4</th>
+                <script>
+                    for(let i=1; i<=15; i++) document.write(`<th>${i}</th>`);
+                </script>
             </tr>
         </thead>
         <tbody id="adminTable"></tbody>
@@ -60,23 +76,46 @@
     };
     firebase.initializeApp(firebaseConfig);
     const db = firebase.database();
-    const numQ = 4;
+    const numQ = 15;
 
-    // Render ô nhập đáp án đúng
     let keyHtml = '';
     for(let i=0; i<numQ; i++) {
-        keyHtml += `Q${i+1}: <input type="text" style="width:30px" id="key-${i}" oninput="setKey(${i}, this.value)"> `;
+        keyHtml += `Q${i+1}: <input type="text" style="width:30px; margin-bottom:5px" id="key-${i}" oninput="setKey(${i}, this.value)"> `;
     }
     document.getElementById('ansKeys').innerHTML = keyHtml;
 
-    function setKey(i, val) { db.ref(`class_room/correct_keys/${i}`).set(val.toLowerCase()); }
-
-    function addPlayer() {
-        const name = document.getElementById('pName').value;
-        if(name) { db.ref('class_room/players').push({ name: name, score: 0 }); document.getElementById('pName').value = ''; }
+    function setKey(i, val) { 
+        db.ref(`class_room/correct_keys/${i}`).set(val.toLowerCase()); 
     }
 
-    function deletePlayer(id) { if(confirm("Xóa học sinh này?")) db.ref(`class_room/players/${id}`).remove(); }
+    // HÀM THÊM HÀNG LOẠT
+    function addBulkPlayers() {
+        const textArea = document.getElementById('bulkNames');
+        const lines = textArea.value.split('\n');
+        let count = 0;
+
+        lines.forEach(line => {
+            const name = line.trim();
+            if (name !== "") {
+                db.ref('class_room/players').push({ name: name, score: 0 });
+                count++;
+            }
+        });
+
+        if (count > 0) {
+            alert(`Đã thêm thành công ${count} học sinh!`);
+            textArea.value = '';
+        } else {
+            alert("Vui lòng nhập hoặc dán danh sách tên!");
+        }
+    }
+
+    function deletePlayer(id) { 
+        if(confirm("Xóa học sinh này?")) {
+            db.ref(`class_room/players/${id}`).remove();
+            db.ref(`class_room/answers/${id}`).remove();
+        }
+    }
 
     function finalize() {
         db.ref('class_room').once('value', snap => {
@@ -85,7 +124,9 @@
             for(let id in data.players) {
                 let s = 0;
                 for(let i=0; i<numQ; i++) {
-                    if(data.answers?.[id]?.[i] === data.correct_keys?.[i]) s++;
+                    const studentAns = data.answers?.[id]?.[i];
+                    const correctKey = data.correct_keys?.[i];
+                    if(studentAns && studentAns === correctKey) s++;
                 }
                 updates[`class_room/players/${id}/score`] = s;
             }
@@ -94,25 +135,34 @@
         });
     }
 
-    function resetSystem() { if(confirm("Xóa hết?")) db.ref('class_room').remove(); }
+    function resetSystem() { 
+        if(confirm("Xóa hết dữ liệu phòng?")) db.ref('class_room').remove(); 
+    }
 
     db.ref('class_room').on('value', snap => {
         const data = snap.val() || {};
         const tbody = document.getElementById('adminTable');
         tbody.innerHTML = '';
         
-        // Sync đáp án đúng vào ô input admin
         for(let i=0; i<numQ; i++) {
-            if(data.correct_keys?.[i]) document.getElementById(`key-${i}`).value = data.correct_keys[i];
+            const input = document.getElementById(`key-${i}`);
+            if(data.correct_keys?.[i] && document.activeElement !== input) {
+                input.value = data.correct_keys[i];
+            }
         }
 
         for(let id in data.players) {
             let row = `<tr>
                 <td><button class="btn-del" onclick="deletePlayer('${id}')">X</button></td>
-                <td>${data.players[id].name}</td>
-                <td>${data.players[id].score}</td>`;
+                <td style="text-align:left">${data.players[id].name}</td>
+                <td style="color:#00ff00; font-weight:bold">${data.players[id].score || 0}</td>`;
+            
             for(let i=0; i<numQ; i++) {
-                row += `<td>${data.answers?.[id]?.[i] || '-'}</td>`;
+                const studentAns = data.answers?.[id]?.[i] || '';
+                const correctKey = data.correct_keys?.[i] || '';
+                const isCorrect = (correctKey !== "" && studentAns === correctKey);
+                const cellClass = isCorrect ? 'class="admin-correct"' : '';
+                row += `<td ${cellClass}>${studentAns || '-'}</td>`;
             }
             tbody.innerHTML += row + `</tr>`;
         }
